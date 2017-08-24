@@ -1,11 +1,10 @@
 import itertools
-
 import os
 import time
 # os.chdir('/root/mb/market_basket_data')
 os.chdir('/home/prudhvi/Documents/market_basket_data')
 from sklearn.metrics import precision_score,accuracy_score,recall_score,f1_score, confusion_matrix
-import numpy as np # linear algebra
+import numpy as np
 import pandas as pd
 import  anytree
 from anytree import  RenderTree
@@ -21,6 +20,10 @@ from sklearn.metrics import silhouette_samples, silhouette_score
 sys.setrecursionlimit(1500)
 from joblib import Parallel, delayed
 import multiprocessing
+from sklearn import linear_model
+from sklearn.metrics import mean_absolute_error
+import  random
+from sklearn import linear_model
 
 
 
@@ -78,6 +81,17 @@ class FPNode(object):
 
 
 # frequent items with key value pairs required
+
+
+def build_header_table(frequent):
+    """
+    Build the header table.
+    """
+    headers = {}
+    for key in frequent.keys():
+        headers[key] = None
+
+    return headers
 
 
 class FPTree(object):
@@ -164,8 +178,6 @@ class FPTree(object):
 
 
 
-
-
 def plist(orders) :
     pf_list = {}
     for index,order in enumerate(orders) :
@@ -187,11 +199,7 @@ def plist(orders) :
         if len(orders) - pf_list[key]['ts'] > pf_list[key]['per'] :
             pf_list[key]['per'] = len(orders) - pf_list[key]['ts']
 
-    #print pf_list
     return pf_list
-
-
-# single_user_df = pd.merge(singleuser_with_orderlist,orders_df.iloc[:,[0,3]],on = 'order_id' , how = 'left')
 
 
 
@@ -207,15 +215,7 @@ def prune_plist(pf_list) :
     for key in pf_list.keys() :
         pf_list[key] = pf_list[key]['freq']
 
-    #print pf_list
     return pf_list
-
-#freq = prune_plist(plist(singleuser_with_orderlist[0]))
-
-# fp_tree
-
-#freq = build_header_table(freq)
-
 
 
 def prune_tree(temp_tree,node_value) :
@@ -224,9 +224,7 @@ def prune_tree(temp_tree,node_value) :
     while current.link is not None:
         temp = current
         while temp.name is not 0:
-            #print "1"
             temp.flag = 1
-            #print temp.flag
             temp = temp.parent
 
         if current.parent.name != 0 :
@@ -277,9 +275,7 @@ def conditional_patterns(tree_pruned,pattern_node,prns) :
                     pattern = str(pattern_node) + ","+ str(node.name)
                     if per < 20 and f > 1 :
                         prns[pattern] = [f,per]
-                        #print pattern
             except Exception , e:
-                #print e
                 pass
     return prns
 
@@ -331,14 +327,12 @@ def intra_inter_time(sorted_transactions_df,pattern,del_min,qmin) :
             last = row['order_number']
             for index2,row2 in islice(sorted_transactions_df.iterrows(),i+1, None) :
                 if x in row2[0] and y not in row2[0]:
-                    #time_inter = 0
                     break
                 if y in row2[0] :
                     time_intra = time_intra + row2['days_since_prior_order']
                     intra.append(time_intra)
                     if len(intra) > 1 :
                         inter.append(time_inter)
-
                         if time_inter < del_min and last != 0:
                             period.append(last)
                         elif len(period) >= qmin:
@@ -371,11 +365,8 @@ def del_max(sorted_transactions_df,pat) :
             inter_max = 0
         else :
             inter_max = np.median(inter)
-
         inter_all.append(inter_max)
-
     cluster_labels = np.digitize(inter_all,bins = np.histogram(inter_all,bins = 'auto')[1])
-    #cluster_labels = [ii[0] for ii in cluster_labels]
 
     df = pd.DataFrame()
     df['pats'] = pats
@@ -384,15 +375,12 @@ def del_max(sorted_transactions_df,pat) :
     df2 = df.groupby(['del_cluster_labels']).apply(lambda x : np.median(x['del_max'])).reset_index()
     df3 = pd.merge(df, df2, on='del_cluster_labels', how='left')
     df3 = df3.rename(columns={0: 'assigned_inter_max'})
-
     return df3
 
 def q_min(sorted_transactions_df, df) :
     pats = df['pats'].tolist()
     del_assigned = df['assigned_inter_max']
     q_medians = []
-    max_score = -1
-    best_n = 2
     for y in range(len(pats)) :
         intra,inter,periods = intra_inter_time(sorted_transactions_df,pats[y],del_assigned[y],0)
         periods_lens = [len(p) for p in periods]
@@ -434,33 +422,109 @@ def tbp_predictor(df,patterns_df) :
     tot_items = [m.split(',') for m in pats]
     tot_items = [item for sublist in tot_items for item in sublist]
     predictors = Counter(tot_items)
+    #print predictors
+    #total_freq = sum(predictors.values())
+    for tt in predictors.keys() :
+        predictors[tt] = predictors[tt]
+        #predictors[tt] = 0
 
     for index,row in patterns_df.iterrows() :
-        intra, inter, periods = intra_inter_time(df,row['pats'],row['assigned_inter_max'],row['assigned_q_min'])
-        if len(periods) >= row['assigned_p_min'] and len(periods) != 0:
-            p = len(periods[len(periods) - 1])
-            q = row['q_medians']
-            if p ==q :
-                Q = p
-            else :
-                Q = (p-q)/p
+        try :
+            intra, inter, periods = intra_inter_time(df,row['pats'],row['assigned_inter_max'],row['assigned_q_min'])
+            if len(periods) >= row['assigned_p_min'] and len(periods) != 0:
+                p = len(periods[len(periods) - 1])
+                q = row['q_medians']
+                if p-q > 0 :
+                    Q = p-q
+                else :
+                    Q = 0
 
-        kk = row['pats'].split(',')
+            kp = row['pats'].split(',')
 
-        predictors[kk[0]] = predictors[kk[0]] + Q
-        predictors[kk[1]] = predictors[kk[1]] + Q
-
+            predictors[kp[0]] = predictors[kp[0]] + Q
+            predictors[kp[1]] = predictors[kp[1]] + Q
+        except :
+            pass
+    #print predictors
     return dict(predictors)
 
 
-def final_product_list(sorted_transactions_df, items_dict) :
+def tbp_predictor_mod(df, patterns_df):
+    Q = 0
+    pats = patterns_df['pats'].tolist()
+    tot_items = [m.split(',') for m in pats]
+    tot_items = [item for sublist in tot_items for item in sublist]
+    predictors_freq = Counter(tot_items)
+    predictors_recr = { }
+    for index, row in patterns_df.iterrows():
+        try:
+            intra, inter, periods = intra_inter_time(df, row['pats'], row['assigned_inter_max'], row['assigned_q_min'])
+            if len(periods) >= row['assigned_p_min'] and len(periods) != 0:
+                p = len(periods[len(periods) - 1])
+                q = row['q_medians']
+                if p - q > 0:
+                    Q = p - q
+                else:
+                    Q = 0
+
+            kp = row['pats'].split(',')
+
+            predictors_recr[kp[0]] = predictors_recr[kp[0]] + Q
+            predictors_recr[kp[1]] = predictors_recr[kp[1]] + Q
+        except:
+            pass
+    # print predictors
+    return dict(predictors_freq),dict(predictors_recr)
+
+
+
+
+
+def final_product_list(sorted_transactions_df,orders_df, items_dict) :
     sorted_items = sorted(items_dict.items(), key=operator.itemgetter(1),reverse = True)
-    order_lengths = [len(it) for it in sorted_transactions_df[0]]
-    median_size = int(np.median(order_lengths))
-    if median_size < len(sorted_items) :
-        final_items = [int(sorted_items[i][0]) for i in range(median_size)]
+    order_lengths_Y = np.array([len(sorted_transactions_df[0][i]) for i in sorted_transactions_df[0]][1:]).reshape(-1,1)
+    reg_df = pd.DataFrame()
+    reg_df['days'] = sorted_transactions_df['days_since_prior_order'][1:]
+    reg_df['last_order_len'] = [len(sorted_transactions_df[0][i]) for i in sorted_transactions_df[0]][:-1]
+    model = linear_model.LinearRegression()
+    model.fit(reg_df, order_lengths_Y)
+    final_order_days = int(orders_df.loc[(orders_df['user_id'] == sorted_transactions_df.loc[1]['user_id']) & (orders_df['eval_set'] == 'train')][
+        'days_since_prior_order'])
+    final_order_size = order_lengths_Y[-1]
+    pred_size = int(model.predict([final_order_days, final_order_size]))
+
+    if pred_size < len(sorted_items) :
+        final_items = [int(sorted_items[i][0]) for i in range(pred_size)]
     else :
         final_items = [int(item[0]) for item in sorted_items]
+    return final_items
+
+
+
+def final_product_list_mod(sorted_transactions_df,orders_df, items_dict_freq,items_dict_recr) :
+
+    order_lengths_Y = np.array([len(sorted_transactions_df[0][i]) for i in sorted_transactions_df[0]][1:]).reshape(-1,1)
+    reg_df = pd.DataFrame()
+    reg_df['days'] = sorted_transactions_df['days_since_prior_order'][1:]
+    reg_df['last_order_len'] = [len(sorted_transactions_df[0][i]) for i in sorted_transactions_df[0]][:-1]
+    model = linear_model.LinearRegression()
+    model.fit(reg_df, order_lengths_Y)
+    final_order_days = int(orders_df.loc[(orders_df['user_id'] == sorted_transactions_df.loc[1]['user_id']) & (orders_df['eval_set'] == 'train')][
+        'days_since_prior_order'])
+    final_order_size = order_lengths_Y[-1]
+    pred_size = int(model.predict([final_order_days, final_order_size]))
+
+    sorted_freq = sorted(items_dict_freq.items(), key=operator.itemgetter(1),reverse = True)
+    sorted_recr = sorted(items_dict_recr.items(), key=operator.itemgetter(1), reverse=True)
+    no_freq_items = int(pred_size/2)
+    no_recr_items = pred_size - no_freq_items
+
+    if pred_size < len(sorted_recr)  :
+        final_items_freq = [int(sorted_freq[i][0]) for i in range(no_freq_items)]
+        final_items_recr = [int(sorted_recr[i][0]) for i in range(no_recr_items)]
+        final_items = final_items_freq + final_items_recr
+    else :
+        final_items = [int(item[0]) for item in sorted_freq]
     return final_items
 
 
@@ -481,20 +545,17 @@ def final_submission(prior,orders_df,userids_list) :
             final_df = final_df.sort_values(by = 'order_number')
             df_with_del_max = del_max(final_df, patrns)
             df_with_q_del_p = q_min(final_df, df_with_del_max)
-            rated_items = tbp_predictor(final_df,df_with_q_del_p)
-            predicted_list = final_product_list(final_df,rated_items)
-            #print z
-            #print predicted_list
-            submiss[z] = predicted_list
+            rated_freq,rated_recr = tbp_predictor_mod(final_df,df_with_q_del_p)
+            predicted_list = final_product_list_mod(final_df,orders_df,rated_freq,rated_recr)
 
+            submiss[z] = predicted_list
             if len(predicted_list) == 0 :
                 submiss[z] = ' '
             else :
                 submiss[z] = " ".join(str(c) for c in predicted_list)
 
         except Exception,e:
-            #print z
-            #print e
+            print e
             submiss[z] = ' '
             pass
         print i ,"users predicted"
@@ -513,43 +574,9 @@ kk1 = final_submission(prior_with_userids,orders_df,userids1)
 kk2 = final_submission(prior_with_userids,orders_df,userids2)
 
 
-
-
-
-""" multiprocessing"""
-
-num_cores = multiprocessing.cpu_count()
-
-def final_submission(z,prior,orders_df,userids_list) :
-    try :
-        single_user_df = prior[prior['user_id']==z]
-        single_user_df = single_user_df.sort_values(by ='order_number')
-        singleuser_with_orderlist = single_user_df.groupby(['user_id','order_id'])['product_id','order_number'].apply(lambda x: x['product_id'].tolist()).reset_index()
-        final_df = pd.merge(singleuser_with_orderlist,orders_df,on =['order_id','user_id'], how= 'left')
-        transaction_list = final_df[0].tolist()
-        trans = plist(final_df[0])
-        patrns= generate_patterns(transaction_list,trans)
-        final_df = final_df.sort_values(by = 'order_number')
-        df_with_del_max = del_max(final_df, patrns)
-        df_with_q_del_p = q_min(final_df, df_with_del_max)
-        rated_items = tbp_predictor(final_df,df_with_q_del_p)
-        predicted_list = final_product_list(final_df,rated_items)
-        predicted_list = " ".join(str(c) for c in predicted_list)
-    except :
-        predicted_list = ' '
-    print userids_list.index(z) , "users predicted"
-    return predicted_list
-
-
-
-results = Parallel(n_jobs=num_cores)(delayed(final_submission)(z,prior_with_userids,orders_df,userids_list) for z in userids_list)
-
-
-
-
-
 sub = pd.DataFrame(kk.items(), columns=['user_id', 'Products'])
 final = pd.merge(orders_df_test,sub,on = 'user_id' , how = 'outer')
+final.drop(final_33.columns[[0,3,4,5,6,7]],inplace=True,axis=1)
 
 final.to_csv( path_or_buf ="~/sub.csv", header = True)
 
@@ -558,7 +585,7 @@ final.to_csv( path_or_buf ="~/sub.csv", header = True)
 
 """Test for one user"""
 
-single_user_df = prior_with_userids[prior_with_userids['user_id'] == 131093]
+single_user_df = prior_with_userids[prior_with_userids['user_id'] == 6]
 single_user_df = single_user_df.sort_values(by='order_number')
 
 singleuser_with_orderlist = single_user_df.groupby(['user_id','order_id'])['product_id','order_number'].apply(
@@ -572,8 +599,31 @@ patrns = generate_patterns(transaction_list, trans)
 final_df = final_df.sort_values(by='order_number')
 df_with_del_max = del_max(final_df, patrns)
 df_with_q_del_p = q_min(final_df, df_with_del_max)
-rated_items = tbp_predictor(final_df,df_with_q_del_p)
-predicted_list = final_product_list(final_df,rated_items)
+rated_f = tbp_predictor(final_df,df_with_q_del_p)
+predicted_list = final_product_list(final_df,orders_df,rated_f)
+
+
+
+sorted_transactions_df = final_df
+orders_df
+items_dict = trans
+sorted_items = sorted(items_dict.items(), key=operator.itemgetter(1), reverse=True)
+order_lengths_Y = np.array([len(sorted_transactions_df[0][i]) for i in sorted_transactions_df[0]][1:]).reshape(-1, 1)
+reg_df = pd.DataFrame()
+reg_df['days'] = sorted_transactions_df['days_since_prior_order'][1:]
+reg_df['last_order_len'] = [len(sorted_transactions_df[0][i]) for i in sorted_transactions_df[0]][:-1]
+model = linear_model.LinearRegression()
+model.fit(reg_df, order_lengths_Y)
+final_order_days = int(orders_df.loc[(orders_df['user_id'] == sorted_transactions_df.loc[1]['user_id']) & (
+orders_df['eval_set'] == 'test')][
+                           'days_since_prior_order'])
+final_order_size = order_lengths_Y[-1]
+pred_size = abs(int(model.predict([final_order_days, final_order_size])))
+                                        
+if pred_size < len(sorted_items):
+    final_items = [int(sorted_items[i][0]) for i in range(pred_size)]
+else:
+    final_items = [int(item[0]) for item in sorted_items]
 
 
 
@@ -581,10 +631,92 @@ predicted_list = final_product_list(final_df,rated_items)
 
 orders_df_train = orders_df[orders_df['eval_set'] == 'train']
 train_userids_list = list(set(orders_df_train['user_id']))
+sample_userids = random.sample(train_userids_list,50)
+sample_predictions = final_submission(prior_with_userids,orders_df,sample_userids)
+sample_pred_df = pd.DataFrame(sample_predictions.items(), columns=['user_id', 'Products'])
+sample_pred_df = sample_pred_df.rename(columns = {'Products': 'Predicted'})
+
+prior_train_with_userids = pd.merge(order_products_train_df, orders_df, on='order_id', how='left')
+
+sample_prior_train = prior_train_with_userids.loc[prior_train_with_userids['user_id'].isin(sample_userids)]
+
+sample_prior_train = sample_prior_train[sample_prior_train['eval_set']=='train']
+
+sample_train_order_list = sample_prior_train.groupby(['user_id'])['product_id','order_number'].apply(lambda x: x['product_id'].tolist()).reset_index()
+
+sample_train_order_list = sample_train_order_list.rename(columns = { 0 : 'Actual'})
+
+final2 = sample_pred_df.merge(sample_train_order_list,on ='user_id')
+
+
+def cal_metrics(s):
+    try:
+        act = s['Actual']
+        #print act
+        pred = s['Predicted'].split(' ')
+        pred = [int(item) for item in pred if item != '']
+        #print pred
+        TP = len(list(set(act).intersection(pred)))
+        PP = len(pred)
+        AP = len(act)
+        #print "precision " ,(TP/PP)
+        #print "Recall ", (TP / AP)
+        score = (2 * TP) / (AP + PP)
+        return pd.Series({'F1': score})
+    except Exception,e :
+        #print e
+        pass
+
+final2 = final2.merge(final2.apply(cal_metrics, axis=1), left_index=True, right_index=True)
+
+#final2['f1_with_true_freq'] = final['F1_with_freq']
+
+comp = pd.DataFrame()
+
+comp['F1_with_freq_only'] = final2['F1']
+comp['F1_with_Rec_only'] = final2['F1']
+comp['F1_with_Rec_freq'] = final2['F1']
+comp['modified'] = final2['F1']
+comp['F1_with_original'] = final2['F1']
+
+del comp['F1_with_original']
+
+comp.mean(axis = 0)
+comp.apply(avg,axis = 0)
+comp['len'] = pp
+
+comp2 = comp[comp['F1_with_freq_only']!=comp['F1_with_Rec_only']]
+
+comp['best_score'] = comp.loc[comp['F1_with_freq_only','F1_with_Rec_only']].max(axis = 1)
+
+pp= []
+
+i = 0
+for z in sample_userids:
+    print i
+    single_user_df = prior_with_userids[prior_with_userids['user_id'] == z]
+    single_user_df = single_user_df.sort_values(by='order_number')
+    singleuser_with_orderlist = single_user_df.groupby(['user_id', 'order_id'])['product_id', 'order_number'].apply(
+        lambda x: x['product_id'].tolist()).reset_index()
+    final_df = pd.merge(singleuser_with_orderlist, orders_df, on=['order_id', 'user_id'], how='left')
+    transaction_list = final_df[0].tolist()
+    trans = plist(final_df[0])
+    patrns = generate_patterns(transaction_list, trans)
+    pp.append(len(patrns)/len(final_df))
+    i = i + 1
+
+
+final2['len'] = pp
+
+
+final3 = final2[final2['F1_with_freq']!=final2['f1_with_true_freq']]
+
+a = final3['F1_with_freq']-final3['f1_with_true_freq'].tolist()
+b = final3['len'].tolist()
 
 
 
-
+final4 = final2.merge(final2.apply(lambda x : np.max(x['F1_with_freq'],x['f1_with_true_freq']), axis=1), left_index=True, right_index=True)
 
 
 
@@ -667,6 +799,9 @@ fptree1_pruned = prune_tree(fptree1,13176)
 
 
 
+# single_user_df = pd.merge(singleuser_with_orderlist,orders_df.iloc[:,[0,3]],on = 'order_id' , how = 'left')
+
+
 fptree1 = FPTree(singleuser_with_orderlist[0].tolist(),freq,0,0)
 
 
@@ -697,6 +832,34 @@ sub = pd.read_csv("/home/prudhvi/Dropbox/MB_project/market-basket/sub.csv")
 
 sub = pd.merge(sub,orders_df_test,on = 'order_id' , how = 'left')
 
-sub.to_csv(path_or_buf ="~/sub.csv", header = True )
+sub.to_csv(path_or_buf ="~/sub.csv", header = True ) 
+
+
+
+ Regression model for K items prediction
+
+Y = np.array([len(final_df[0][i]) for i in final_df[0]][1:]).reshape(-1,1)
+X = np.array(final_df['days_since_prior_order'][1:].tolist()).reshape(-1,1)
+
+test_df = pd.DataFrame()
+test_df['days'] = final_df['days_since_prior_order'][1:]
+test_df['last_order_len'] = [len(final_df[0][i]) for i in final_df[0]][:-1]
+test_df['order_dow'] = final_df['order_dow'][1:]
+
+model = linear_model.LinearRegression()
+
+model.fit(test_df,Y)
+
+model.score(test_df,Y)
+
+predicted = model.predict(test_df)
+
+
+
+mean_absolute_error(Y, predicted)
+
+current_predicted = [np.median(Y)]*len(Y)
+
+mean_absolute_error(Y,current_predicted)
 
 """
