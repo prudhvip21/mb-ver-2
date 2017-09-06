@@ -438,9 +438,7 @@ def tbp_predictor(df,patterns_df) :
                     Q = p-q
                 else :
                     Q = 0
-
             kp = row['pats'].split(',')
-
             predictors[kp[0]] = predictors[kp[0]] + Q
             predictors[kp[1]] = predictors[kp[1]] + Q
         except :

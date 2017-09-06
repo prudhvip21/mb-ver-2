@@ -447,7 +447,7 @@ def tbp_predictor(df, patterns_df):
 
     for index, row in patterns_df.iterrows():
         try:
-            intra, inter, periods = intra_inter_time(df, row['pats'], row['assigned_inter_max'], row['assigned_q_min'])
+            intra, inter, periods = iip_mod(df, row['pats'],occs, row['assigned_inter_max'], row['assigned_q_min'])
             if len(periods) >= row['assigned_p_min'] and len(periods) != 0:
                 p = len(periods[len(periods) - 1])
                 q = row['q_medians']
@@ -474,7 +474,7 @@ def final_product_list(sorted_transactions_df, orders_df, items_dict):
     model = linear_model.LinearRegression()
     model.fit(reg_df, order_lengths_Y)
     final_order_days = int(orders_df.loc[(orders_df['user_id'] == sorted_transactions_df.iloc[0]['user_id']) & (
-    orders_df['eval_set'] == 'test')][
+    orders_df['eval_set'] == 'train')][
                                'days_since_prior_order'])
     final_order_size = order_lengths_Y[-1]
     pred_size = int(model.predict([final_order_days, final_order_size]))
@@ -496,16 +496,17 @@ def final_submission(total_df, orders_df, userids_list):
             transaction_list = final_df[0].tolist()
             trans = plist(final_df[0])
             patrns = generate_patterns(transaction_list, trans)
-            final_df = final_df.sort_values(by='order_number')
-            occurs = products_occurences(final_df,patrns)
-            df_with_del_max = del_max(final_df,patrns,occurs)
-            df_with_q_del_p = q_min(final_df, df_with_del_max,occurs)
-            rated = tbp_predictor(final_df, df_with_q_del_p)
-            predicted_list = final_product_list(final_df, orders_df, rated)
-            submiss[z] = predicted_list
-            if len(predicted_list) == 0:
-                submiss[z] = ' '
+            if len(patrns) == 0:
+                predicted_list = final_product_list(final_df, orders_df, trans)
+                submiss[z] = " ".join(str(c) for c in predicted_list)
             else:
+                final_df = final_df.sort_values(by='order_number')
+                occurs = products_occurences(final_df,patrns)
+                df_with_del_max = del_max(final_df,patrns,occurs)
+                df_with_q_del_p = q_min(final_df, df_with_del_max,occurs)
+                rated = tbp_predictor(final_df, df_with_q_del_p)
+                predicted_list = final_product_list(final_df, orders_df, rated)
+                submiss[z] = predicted_list
                 submiss[z] = " ".join(str(c) for c in predicted_list)
         except Exception, e:
             print e
@@ -529,7 +530,7 @@ kk = final_submission(total_df, orders_df, userids_list)
 
 sub = pd.DataFrame(kk.items(), columns=['user_id', 'Products'])
 final = pd.merge(orders_df_test, sub, on='user_id', how='outer')
-final.drop(final_33.columns[[0, 3, 4, 5, 6, 7]], inplace=True, axis=1)
+final.drop(final.columns[[1,2,3,4,5,6]], inplace=True, axis=1)
 
 final.to_csv(path_or_buf="~/sub.csv", header=True)
 
@@ -537,7 +538,7 @@ final.to_csv(path_or_buf="~/sub.csv", header=True)
 
 """Test for one user"""
 
-final_df = total_df[(total_df['user_id'] == 8 ) & (total_df['eval_set'] == 'prior')]
+final_df = total_df[(total_df['user_id'] == 130867 ) & (total_df['eval_set'] == 'prior')]
 
 
 transaction_list = final_df[0].tolist()
