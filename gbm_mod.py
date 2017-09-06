@@ -11,25 +11,27 @@
 import numpy as np
 import pandas as pd
 import lightgbm as lgb
-IDIR = '../input/'
+
+os.chdir('/home/prudhvi/Documents/market_basket_data')
 
 
 print('loading prior')
-priors = pd.read_csv(IDIR + 'order_products__prior.csv', dtype={
+priors = pd.read_csv('order_products__prior.csv', dtype={
             'order_id': np.int32,
             'product_id': np.uint16,
             'add_to_cart_order': np.int16,
             'reordered': np.int8})
 
 print('loading train')
-train = pd.read_csv(IDIR + 'order_products__train.csv', dtype={
+
+train = pd.read_csv('order_products__train.csv', dtype={
             'order_id': np.int32,
             'product_id': np.uint16,
             'add_to_cart_order': np.int16,
             'reordered': np.int8})
 
 print('loading orders')
-orders = pd.read_csv(IDIR + 'orders.csv', dtype={
+orders = pd.read_csv('orders.csv', dtype={
         'order_id': np.int32,
         'user_id': np.int32,
         'eval_set': 'category',
@@ -39,7 +41,7 @@ orders = pd.read_csv(IDIR + 'orders.csv', dtype={
         'days_since_prior_order': np.float32})
 
 print('loading products')
-products = pd.read_csv(IDIR + 'products.csv', dtype={
+products = pd.read_csv('products.csv', dtype={
         'product_id': np.uint16,
         'order_id': np.int32,
         'aisle_id': np.uint8,
