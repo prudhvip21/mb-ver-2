@@ -505,9 +505,10 @@ def final_submission(total_df, orders_df, userids_list):
                 df_with_del_max = del_max(final_df,patrns,occurs)
                 df_with_q_del_p = q_min(final_df, df_with_del_max,occurs)
                 rated = tbp_predictor(final_df, df_with_q_del_p)
-                predicted_list = final_product_list(final_df, orders_df, rated)
-                submiss[z] = predicted_list
-                submiss[z] = " ".join(str(c) for c in predicted_list)
+                #predicted_list = final_product_list(final_df, orders_df, rated)
+                #submiss[z] = predicted_list
+                #submiss[z] = " ".join(str(c) for c in predicted_list)
+                submiss[z] = rated
         except Exception, e:
             print e
             submiss[z] = ' '
@@ -516,8 +517,8 @@ def final_submission(total_df, orders_df, userids_list):
     return submiss
 
 
-orders_df_test = orders_df[orders_df['eval_set'] == 'test']
-userids_list = list(set(orders_df_test['user_id']))
+orders_df_test = orders_df[orders_df['eval_set'] == 'train']
+userids_list = list(set(orders_df_test['user_id']))[0:2000]
 
 products_orders_df = order_products_prior_df.groupby(['order_id']).apply(
     lambda x: x['product_id'].tolist()).reset_index()

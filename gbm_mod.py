@@ -11,6 +11,7 @@
 import numpy as np
 import pandas as pd
 import lightgbm as lgb
+import os
 
 os.chdir('/home/prudhvi/Documents/market_basket_data')
 
@@ -43,14 +44,36 @@ orders = pd.read_csv('orders.csv', dtype={
 print('loading products')
 products = pd.read_csv('products.csv', dtype={
         'product_id': np.uint16,
-        'order_id': np.int32,
+        'product_name': 'category',
         'aisle_id': np.uint8,
         'department_id': np.uint8},
-        usecols=['product_id', 'aisle_id', 'department_id'])
+        usecols=['product_id','product_name','aisle_id', 'department_id'])
 
 print('priors {}: {}'.format(priors.shape, ', '.join(priors.columns)))
 print('orders {}: {}'.format(orders.shape, ', '.join(orders.columns)))
 print('train {}: {}'.format(train.shape, ', '.join(train.columns)))
+
+
+orders_df = orders[(orders['eval_set'] == 'prior')]
+
+userids_list = list(set(orders['user_id']))
+
+userids_list = userids_list[:200]
+
+priors = priors[priors['user_id'].isin(userids_list)]
+
+
+""" Trying userid 3"""
+
+print('add order info to priors')
+
+
+orders.set_index('order_id', inplace=True, drop=False)
+priors = priors.join(orders, on='order_id', rsuffix='_')
+priors.drop('order_id_', inplace=True, axis=1)
+
+priors_one = priors[priors.user_id==3]
+
 
 ###
 
@@ -59,18 +82,15 @@ prods = pd.DataFrame()
 prods['orders'] = priors.groupby(priors.product_id).size().astype(np.int32)
 prods['reorders'] = priors['reordered'].groupby(priors.product_id).sum().astype(np.float32)
 prods['reorder_rate'] = (prods.reorders / prods.orders).astype(np.float32)
-products = products.join(prods, on='product_id')
+products = products.join(prods, on='product_id',rsuffix = '_')
 products.set_index('product_id', drop=False, inplace=True)
 del prods
 
-
-print('add order info to priors')
-orders.set_index('order_id', inplace=True, drop=False)
-priors = priors.join(orders, on='order_id', rsuffix='_')
-priors.drop('order_id_', inplace=True, axis=1)
+orders_one = orders[orders.user_id == 3]
 
 ### user features
 
+#orders = orders[orders['user_id'].isin(userids_list)]
 
 print('computing user f')
 usr = pd.DataFrame()
@@ -87,10 +107,11 @@ del usr
 users['average_basket'] = (users.total_items / users.nb_orders).astype(np.float32)
 print('user f', users.shape)
 
+
 ### userXproduct features
 
 print('compute userXproduct f - this is long...')
-priors['user_product'] = priors.product_id + priors.user_id * 100000
+priors_one['user_product'] = priors_one.product_id + priors_one.user_id * 100000
 
 # This was to slow !!
 #def last_order(order_group):
@@ -100,7 +121,7 @@ priors['user_product'] = priors.product_id + priors.user_id * 100000
 #userXproduct['tmp'] = df.groupby('user_product').apply(last_order)
 
 d= dict()
-for row in priors.itertuples():
+for row in priors_one.itertuples():
     z = row.user_product
     if z not in d:
         d[z] = (1,
@@ -116,6 +137,7 @@ userXproduct = pd.DataFrame.from_dict(d, orient='index')
 del d
 userXproduct.columns = ['nb_orders', 'last_order_id', 'sum_pos_in_cart']
 userXproduct.nb_orders = userXproduct.nb_orders.astype(np.int16)
+
 userXproduct.last_order_id = userXproduct.last_order_id.map(lambda x: x[1]).astype(np.int32)
 userXproduct.sum_pos_in_cart = userXproduct.sum_pos_in_cart.astype(np.int16)
 print('user X product f', len(userXproduct))
@@ -124,8 +146,9 @@ del priors
 
 ### train / test orders ###
 print('split orders : train, test')
-test_orders = orders[orders.eval_set == 'test']
-train_orders = orders[orders.eval_set == 'train']
+
+test_orders = orders_one[orders_one.eval_set == 'test']
+train_orders = orders_one[orders_one.eval_set == 'train']
 
 train.set_index(['order_id', 'product_id'], inplace=True, drop=False)
 
@@ -138,21 +161,21 @@ def features(selected_orders, labels_given=False):
     labels = []
     i=0
     for row in selected_orders.itertuples():
+        print i
         i+=1
         if i%10000 == 0: print('order row',i)
         order_id = row.order_id
         user_id = row.user_id
         user_products = users.all_products[user_id]
-        product_list += user_products
-        order_list += [order_id] * len(user_products)
+        product_list =  user_products
+        order_list = [order_id] * len(user_products)
         if labels_given:
             labels += [(order_id, product) in train.index for product in user_products]
-        
+
     df = pd.DataFrame({'order_id':order_list, 'product_id':product_list}, dtype=np.int32)
     labels = np.array(labels, dtype=np.int8)
     del order_list
     del product_list
-    
     print('user related features')
     df['user_id'] = df.order_id.map(orders.user_id)
     df['user_total_orders'] = df.user_id.map(users.nb_orders)
@@ -186,14 +209,15 @@ def features(selected_orders, labels_given=False):
     df['UP_delta_hour_vs_last'] = abs(df.order_hour_of_day - df.UP_last_order_id.map(orders.order_hour_of_day)).map(lambda x: min(x, 24-x)).astype(np.int8)
     #df['UP_same_dow_as_last_order'] = df.UP_last_order_id.map(orders.order_dow) == \
     #                                              df.order_id.map(orders.order_dow)
-
     df.drop(['UP_last_order_id', 'z'], axis=1, inplace=True)
     print(df.dtypes)
     print(df.memory_usage())
     return (df, labels)
     
 
-df_train, labels = features(train_orders, labels_given=True)
+
+
+
 
 f_to_use = ['user_total_orders', 'user_total_items', 'total_distinct_items',
        'user_average_days_between_orders', 'user_average_basket',
@@ -257,3 +281,36 @@ sub.reset_index(inplace=True)
 sub.columns = ['order_id', 'products']
 sub.to_csv('sub.csv', index=False)
 
+
+
+""" JUNK Code 
+
+
+df_train, labels = features(orders_one, labels_given=True)
+
+order_list = []
+product_list = []
+labels = []
+i = 0
+for row in orders_one.itertuples():
+    print i
+    i += 1
+    if i % 10000 == 0: print('order row', i)
+    order_id = row.order_id
+    user_id = row.user_id
+    user_products = users.all_products[user_id]
+    #print user_products
+    product_list += user_products
+    print len(product_list)
+    #print product_list
+    order_list += [order_id] * len(user_products)
+
+    labels += [(order_id, product) in train.index for product in user_products]
+    #print labels
+    #if i==2 : break
+
+
+
+
+
+"""

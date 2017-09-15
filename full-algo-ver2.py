@@ -188,7 +188,6 @@ def plist(orders) :
                 if new_per > pf_list[product]['per'] :
                     pf_list[product]['per'] = new_per
                 pf_list[product]['ts'] = index + 1
-
             else  :
                 d = {}
                 d['freq'] = 1
