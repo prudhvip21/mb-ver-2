@@ -53,17 +53,41 @@ print('priors {}: {}'.format(priors.shape, ', '.join(priors.columns)))
 print('orders {}: {}'.format(orders.shape, ', '.join(orders.columns)))
 print('train {}: {}'.format(train.shape, ', '.join(train.columns)))
 
+# Binning departments
 
-orders_df = orders[(orders['eval_set'] == 'prior')]
+def bin_dept(row) :
+    if row['department_id'] == 4 :
+        return 1
+    elif row['department_id'] == 16 :
+        return 2
+    elif row['department_id'] == 19 or row['department_id'] == 7:
+        return 3
+    elif row['department_id']== 1 or row['department_id'] == 13 :
+        return 4
+    else :
+        return 5
 
-userids_list = list(set(orders['user_id']))
 
-userids_list = userids_list[:200]
-
-priors = priors[priors['user_id'].isin(userids_list)]
+products['depts_binned'] = products.apply(lambda row:bin_dept(row),axis=1)
 
 
-""" Trying userid 3"""
+# Binning aisles
+
+def bin_aisle(row) :
+    if row['aisle_id'] == 24 or row['aisle_id'] == 83:
+        return 1
+    elif row['aisle_id']==123 or row['aisle_id'] ==120:
+        return 2
+    elif row['aisle_id'] in [21,84,115,107,91] :
+        return 3
+    elif row['aisle_id'] in [112,31,116,37,78] :
+        return 4
+    else :
+        return 5
+
+
+products['aisles_binned'] = products.apply(lambda row:bin_aisle(row),axis=1)
+
 
 print('add order info to priors')
 
@@ -72,13 +96,42 @@ orders.set_index('order_id', inplace=True, drop=False)
 priors = priors.join(orders, on='order_id', rsuffix='_')
 priors.drop('order_id_', inplace=True, axis=1)
 
-priors_one = priors[priors.user_id==3]
-
-
 ###
+""" 
+df_complete_prod = pd.merge(left=pd.merge(left=products, right=departments, how='left'), right= aisles, how='left').drop(['department_id', 'aisle_id'], axis=1)
+
+"""
+
+priors_with_products = pd.merge(left= priors, right=products, how='left' ,on ='product_id')
+
+del priors
+del priors_with_products['product_name']
+
+products_list = priors_with_products.product_id.value_counts()
+
+top_products_list = list(products_list.index[:2500])
+
+rest_products_list = list(products_list.index[2500:])
+
+products = products[products.product_id.isin(top_products_list)]
+
+del products_list
+
+top_priors_with_products = priors_with_products[priors_with_products.product_id.isin(top_products_list)]
+
+del priors_with_products
+
+#merged = priors_with_products.merge(top_priors_with_products, indicator=True, how='outer')
+
+# rest_priors_with_products = merged[merged['_merge'] == 'left_only']
+
+# rest_priors_with_products = priors_with_products[priors_with_products.product_id.isin(rest_products_list)]
+
+priors = top_priors_with_products
 
 print('computing product f')
 prods = pd.DataFrame()
+
 prods['orders'] = priors.groupby(priors.product_id).size().astype(np.int32)
 prods['reorders'] = priors['reordered'].groupby(priors.product_id).sum().astype(np.float32)
 prods['reorder_rate'] = (prods.reorders / prods.orders).astype(np.float32)
@@ -86,13 +139,14 @@ products = products.join(prods, on='product_id',rsuffix = '_')
 products.set_index('product_id', drop=False, inplace=True)
 del prods
 
-orders_one = orders[orders.user_id == 3]
+# orders_one = orders[orders.user_id == 3]
 
 ### user features
 
 #orders = orders[orders['user_id'].isin(userids_list)]
 
 print('computing user f')
+
 usr = pd.DataFrame()
 usr['average_days_between_orders'] = orders.groupby('user_id')['days_since_prior_order'].mean().astype(np.float32)
 usr['nb_orders'] = orders.groupby('user_id').size().astype(np.int16)
@@ -111,7 +165,7 @@ print('user f', users.shape)
 ### userXproduct features
 
 print('compute userXproduct f - this is long...')
-priors_one['user_product'] = priors_one.product_id + priors_one.user_id * 100000
+priors['user_product'] = priors.product_id + priors.user_id * 100000
 
 # This was to slow !!
 #def last_order(order_group):
@@ -121,7 +175,9 @@ priors_one['user_product'] = priors_one.product_id + priors_one.user_id * 100000
 #userXproduct['tmp'] = df.groupby('user_product').apply(last_order)
 
 d= dict()
-for row in priors_one.itertuples():
+i = 0
+for row in priors.itertuples():
+    if i % 10000 == 0: print('order row', i)
     z = row.user_product
     if z not in d:
         d[z] = (1,
@@ -131,14 +187,17 @@ for row in priors_one.itertuples():
         d[z] = (d[z][0] + 1,
                 max(d[z][1], (row.order_number, row.order_id)),
                 d[z][2] + row.add_to_cart_order)
+    i = i + 1
 
 print('to dataframe (less memory)')
 userXproduct = pd.DataFrame.from_dict(d, orient='index')
 del d
 userXproduct.columns = ['nb_orders', 'last_order_id', 'sum_pos_in_cart']
+
 userXproduct.nb_orders = userXproduct.nb_orders.astype(np.int16)
 
 userXproduct.last_order_id = userXproduct.last_order_id.map(lambda x: x[1]).astype(np.int32)
+
 userXproduct.sum_pos_in_cart = userXproduct.sum_pos_in_cart.astype(np.int16)
 print('user X product f', len(userXproduct))
 
@@ -147,8 +206,10 @@ del priors
 ### train / test orders ###
 print('split orders : train, test')
 
-test_orders = orders_one[orders_one.eval_set == 'test']
-train_orders = orders_one[orders_one.eval_set == 'train']
+orders = orders[orders.user_id.isin(list(users.index))]
+test_orders_2500 = orders[orders.eval_set == 'test']
+train_orders = orders[orders.eval_set == 'train']
+
 
 train.set_index(['order_id', 'product_id'], inplace=True, drop=False)
 
@@ -160,17 +221,20 @@ def features(selected_orders, labels_given=False):
     product_list = []
     labels = []
     i=0
+    print len(selected_orders)
     for row in selected_orders.itertuples():
-        print i
+        #print i
         i+=1
-        if i%10000 == 0: print('order row',i)
+        if i%1000 == 0: print('order row',i)
         order_id = row.order_id
         user_id = row.user_id
         user_products = users.all_products[user_id]
-        product_list =  user_products
-        order_list = [order_id] * len(user_products)
+        product_list +=  user_products
+        order_list += [order_id] * len(user_products)
         if labels_given:
             labels += [(order_id, product) in train.index for product in user_products]
+
+    print Counter(labels)
 
     df = pd.DataFrame({'order_id':order_list, 'product_id':product_list}, dtype=np.int32)
     labels = np.array(labels, dtype=np.int8)
@@ -213,17 +277,23 @@ def features(selected_orders, labels_given=False):
     print(df.dtypes)
     print(df.memory_usage())
     return (df, labels)
-    
 
 
+
+
+
+
+df_train,labels = features(train_orders, labels_given=True)
+
+df_train['aisles_binned'] = df_train.product_id.map(products.aisles_binned)
+df_train['depts_binned'] = df_train.product_id.map(products.depts_binned)
 
 
 
 f_to_use = ['user_total_orders', 'user_total_items', 'total_distinct_items',
        'user_average_days_between_orders', 'user_average_basket',
-       'order_hour_of_day', 'days_since_prior_order', 'days_since_ratio',
-       'aisle_id', 'department_id', 'product_orders', 'product_reorders',
-       'product_reorder_rate', 'UP_orders', 'UP_orders_ratio',
+       'order_hour_of_day', 'days_since_prior_order', 'days_since_ratio','product_orders', 'product_reorders',
+       'product_reorder_rate', 'UP_orders', 'UP_orders_ratio', 'aisles_binned','depts_binned',
        'UP_average_pos_in_cart', 'UP_reorder_rate', 'UP_orders_since_last',
        'UP_delta_hour_vs_last'] # 'dow', 'UP_same_dow_as_last_order'
 
@@ -231,7 +301,7 @@ f_to_use = ['user_total_orders', 'user_total_items', 'total_distinct_items',
 print('formating for lgb')
 d_train = lgb.Dataset(df_train[f_to_use],
                       label=labels,
-                      categorical_feature=['aisle_id', 'department_id'])  # , 'order_hour_of_day', 'dow'
+                      categorical_feature=['aisles_binned', 'depts_binned'])  # , 'order_hour_of_day', 'dow'
 del df_train
 
 params = {
@@ -256,12 +326,16 @@ del d_train
 
 df_test, _ = features(test_orders)
 
+df_test['aisles_binned'] = df_test.product_id.map(products.aisles_binned)
+df_test['depts_binned'] = df_test.product_id.map(products.depts_binned)
+
+
 print('light GBM predict')
 preds = bst.predict(df_test[f_to_use])
 
 df_test['pred'] = preds
 
-TRESHOLD = 0.22  # guess, should be tuned with crossval on a subset of train data
+TRESHOLD = 0.18  # guess, should be tuned with crossval on a subset of train data
 
 d = dict()
 for row in df_test.itertuples():
@@ -310,7 +384,13 @@ for row in orders_one.itertuples():
     #if i==2 : break
 
 
+orders_df = orders[(orders['eval_set'] == 'prior')]
 
+userids_list = list(set(orders['user_id']))
+
+userids_list = userids_list[:200]
+
+priors = priors[priors['user_id'].isin(userids_list)]
 
 
 """
