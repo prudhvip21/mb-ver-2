@@ -496,12 +496,6 @@ def final_submission(total_df, orders_df, userids_list):
         i = i + 1
         try:
             final_df = total_df[total_df['user_id'] == z]
-            if final_df[0].isnull().values.any():
-                for index, row in final_df.iterrows():
-                    if np.isnan(row[0]).any():
-                        final_df.loc[index + 1]['days_since_prior_order'] += row['days_since_prior_order']
-                        final_df.drop(index, inplace=True)
-
             transaction_list = final_df[0].tolist()
             trans = plist(final_df[0])
             patrns = generate_patterns(transaction_list, trans)
@@ -529,17 +523,10 @@ def final_submission(total_df, orders_df, userids_list):
 orders_df_test = orders_df[orders_df['eval_set'] == 'test']
 userids_list = list(set(orders_df_test['user_id']))
 
-products_list = order_products_prior_df.product_id.value_counts()
-
-top_products_list = list(products_list.index[:2500])
-
 order_products_prior_df = order_products_prior_df[order_products_prior_df.product_id.isin(top_products_list)]
-
 products_orders_df = order_products_prior_df.groupby(['order_id']).apply(
     lambda x: x['product_id'].tolist()).reset_index()
-
 total_df = pd.merge(orders_df, products_orders_df, on='order_id', how='left')
-
 total_df = total_df[total_df['eval_set'] == 'prior']
 
 kk = final_submission(total_df, orders_df, userids_list)
@@ -547,11 +534,7 @@ kk = final_submission(total_df, orders_df, userids_list)
 sub = pd.DataFrame(kk.items(), columns=['user_id', 'Products'])
 final = pd.merge(orders_df_test, sub, on='user_id', how='outer')
 final.drop(final.columns[[1,2,3,4,5,6]], inplace=True, axis=1)
-
 final.to_csv(path_or_buf="~/sub.csv", header=True)
-
-
-
 
 
 """Test for one user"""
@@ -573,12 +556,21 @@ if final_df[0].isnull().values.any() :
 
 
 
-
-
-
 occurs = products_occurences(final_df,patrns)
 df_with_del_max = del_max(final_df,patrns,occurs)
 df_with_q_del_p = q_min(final_df, df_with_del_max,occurs)
 rated = tbp_predictor(final_df, df_with_q_del_p)
 predicted_list = final_product_list(final_df, orders_df, rated)
 
+"""
+Code for removing NANs when only 2500 products are used 
+
+products_list = order_products_prior_df.product_id.value_counts()
+
+top_products_list = list(products_list.index[:2500]) 
+
+            if final_df[0].isnull().values.any():
+                for index, row in final_df.iterrows():
+                    if np.isnan(row[0]).any():
+                        final_df.loc[index + 1]['days_since_prior_order'] += row['days_since_prior_order']
+                        final_df.drop(index, inplace=True)"""
