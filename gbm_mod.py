@@ -199,6 +199,12 @@ userXproduct.nb_orders = userXproduct.nb_orders.astype(np.int16)
 userXproduct.last_order_id = userXproduct.last_order_id.map(lambda x: x[1]).astype(np.int32)
 
 userXproduct.sum_pos_in_cart = userXproduct.sum_pos_in_cart.astype(np.int16)
+
+products_orders_df = priors.groupby(['order_id']).apply(
+    lambda x: x['product_id'].tolist()).reset_index()
+
+total_df = pd.merge(orders_df, products_orders_df, on='order_id', how='left')
+
 print('user X product f', len(userXproduct))
 
 del priors
