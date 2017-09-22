@@ -101,18 +101,15 @@ priors.drop('order_id_', inplace=True, axis=1)
 df_complete_prod = pd.merge(left=pd.merge(left=products, right=departments, how='left'), right= aisles, how='left').drop(['department_id', 'aisle_id'], axis=1)
 
 """
+# Getting products data frame with 2500 ids only
 
 priors_with_products = pd.merge(left= priors, right=products, how='left' ,on ='product_id')
-
 del priors
 del priors_with_products['product_name']
 
 products_list = priors_with_products.product_id.value_counts()
-
 top_products_list = list(products_list.index[:2500])
-
 rest_products_list = list(products_list.index[2500:])
-
 products = products[products.product_id.isin(top_products_list)]
 
 del products_list
@@ -122,16 +119,71 @@ top_priors_with_products = priors_with_products[priors_with_products.product_id.
 del priors_with_products
 
 #merged = priors_with_products.merge(top_priors_with_products, indicator=True, how='outer')
-
 # rest_priors_with_products = merged[merged['_merge'] == 'left_only']
-
 # rest_priors_with_products = priors_with_products[priors_with_products.product_id.isin(rest_products_list)]
 
 priors = top_priors_with_products
+products_orders_df = priors.groupby(['order_id']).apply(
+    lambda x: x['product_id'].tolist()).reset_index()
+products_orders_df = products_orders_df.rename(columns={0: 'Products'})
+
+
+
+
+
+
+products_orders_df['user_id'] = products_orders_df.order_id.map(orders.user_id)
+products_orders_df['days_since'] = products_orders_df.order_id.map(orders.days_since_prior_order)
+products_orders_df['order_number'] = products_orders_df.order_id.map(orders.order_number)
+products_orders_df['eval_set'] = products_orders_df.order_id.map(orders.eval_set)
+
+userids_list = products_orders_df.user_id.unique()
+
+final = pd.DataFrame()
+pk = 1
+for p in userids_list :
+    print pk , "users done"
+    pk = pk + 1
+    single_df = products_orders_df[products_orders_df.user_id== p]
+    single_df = single_df.sort_values(by ='order_number')
+    occ = {}
+    for index, row in single_df.iterrows():
+        for item in row['Products'] :
+            if item in occ.keys() :
+                occ[item].append(row['order_number'])
+            else :
+                occ[item]= []
+                occ[item].append(row['order_number'])
+    inter_times = { }
+    days_last_occ = { }
+
+    for key in occ.keys() :
+        inter = [ ]
+        for i in range(len(occ[key])) :
+            if i+1 == len(occ[key]) :
+                days_last_occ[key] = (sum(single_df['days_since'].iloc[occ[key][i]:]))
+                break
+            else :
+                inter.append(sum(single_df['days_since'].iloc[occ[key][i]:occ[key][i+1]]))
+        inter_times[key] = inter
+    # medians for inter times calculated
+    for key in inter_times.keys() :
+        if len(inter_times[key]) ==0 :
+            inter_times[key] = 0
+        else :
+            inter_times[key] = np.median(inter_times[key])
+
+    df_with_inter_lastocc = pd.DataFrame([inter_times, days_last_occ]).T
+    df_with_inter_lastocc.index.name = 'product_id'
+    df_with_inter_lastocc.columns = ['inter_time_median','days_since_last_occ']
+    df_with_inter_lastocc = df_with_inter_lastocc.reset_index()
+    df_with_inter_lastocc['user_id'] = p
+    #print len(df_with_inter_lastocc)
+    final = pd.concat([final,df_with_inter_lastocc])
+    #print len(final)
 
 print('computing product f')
 prods = pd.DataFrame()
-
 prods['orders'] = priors.groupby(priors.product_id).size().astype(np.int32)
 prods['reorders'] = priors['reordered'].groupby(priors.product_id).sum().astype(np.float32)
 prods['reorder_rate'] = (prods.reorders / prods.orders).astype(np.float32)

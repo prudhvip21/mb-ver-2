@@ -459,7 +459,6 @@ def tbp_predictor(df, patterns_df):
                 else:
                     Q = 0
             kp = row['pats'].split(',')
-
             predictors[kp[0]] = predictors[kp[0]] + Q
             predictors[kp[1]] = predictors[kp[1]] + Q
         except:
@@ -524,8 +523,10 @@ orders_df_test = orders_df[orders_df['eval_set'] == 'test']
 userids_list = list(set(orders_df_test['user_id']))
 
 order_products_prior_df = order_products_prior_df[order_products_prior_df.product_id.isin(top_products_list)]
+
 products_orders_df = order_products_prior_df.groupby(['order_id']).apply(
     lambda x: x['product_id'].tolist()).reset_index()
+
 total_df = pd.merge(orders_df, products_orders_df, on='order_id', how='left')
 total_df = total_df[total_df['eval_set'] == 'prior']
 
