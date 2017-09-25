@@ -181,6 +181,7 @@ for p in userids_list :
     #print len(df_with_inter_lastocc)
     final = pd.concat([final,df_with_inter_lastocc])
     #print len(final)
+final['user_product'] = final.product_id + final.user_id * 100000
 
 print('computing product f')
 prods = pd.DataFrame()
@@ -244,7 +245,10 @@ for row in priors.itertuples():
 print('to dataframe (less memory)')
 userXproduct = pd.DataFrame.from_dict(d, orient='index')
 del d
-userXproduct.columns = ['nb_orders', 'last_order_id', 'sum_pos_in_cart']
+
+userXproduct = userXproduct.reset_index()
+
+userXproduct.columns = ['user_product','nb_orders', 'last_order_id', 'sum_pos_in_cart']
 
 userXproduct.nb_orders = userXproduct.nb_orders.astype(np.int16)
 
@@ -252,10 +256,10 @@ userXproduct.last_order_id = userXproduct.last_order_id.map(lambda x: x[1]).asty
 
 userXproduct.sum_pos_in_cart = userXproduct.sum_pos_in_cart.astype(np.int16)
 
-products_orders_df = priors.groupby(['order_id']).apply(
-    lambda x: x['product_id'].tolist()).reset_index()
 
-total_df = pd.merge(orders_df, products_orders_df, on='order_id', how='left')
+userXproduct = userXproduct.merge(final, on='user_product' , how ='left')
+
+userXproduct['inter_feature'] = userXproduct.days_since_last_occ/ (userXproduct.inter_time_median + 0.05)
 
 print('user X product f', len(userXproduct))
 
@@ -322,6 +326,8 @@ def features(selected_orders, labels_given=False):
     print('user_X_product related features')
     df['z'] = df.user_id * 100000 + df.product_id
     df.drop(['user_id'], axis=1, inplace=True)
+    df['inter_feature'] = df.z.map(userXproduct.inter_feature)
+
     df['UP_orders'] = df.z.map(userXproduct.nb_orders)
     df['UP_orders_ratio'] = (df.UP_orders / df.user_total_orders).astype(np.float32)
     df['UP_last_order_id'] = df.z.map(userXproduct.last_order_id)
@@ -413,7 +419,7 @@ sub.reset_index(inplace=True)
 sub.columns = ['order_id', 'products']
 sub.to_csv('sub.csv', index=False)
 
-
+userXproduct.to_csv('userXproduct.csv', index=False)
 
 """ JUNK Code 
 
