@@ -35,6 +35,7 @@ print('loading orders')
 orders = pd.read_csv('orders.csv', dtype={
         'order_id': np.int32,
         'user_id': np.int32,
+
         'eval_set': 'category',
         'order_number': np.int16,
         'order_dow': np.int8,
