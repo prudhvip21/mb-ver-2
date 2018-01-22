@@ -478,8 +478,10 @@ def final_product_list(sorted_transactions_df, orders_df, items_dict):
     final_order_days = int(orders_df.loc[(orders_df['user_id'] == sorted_transactions_df.iloc[0]['user_id']) & (
     orders_df['eval_set'] == 'test')][
                                'days_since_prior_order'])
-    final_order_size = order_lengths_Y[-1]
-    pred_size = int(model.predict([final_order_days, final_order_size]))
+    final_order_size = int(order_lengths_Y[-1])
+    df = pd.DataFrame(columns = ['days','last_order_len'])
+    df.loc[1] = [final_order_days,final_order_size]
+    pred_size = int(model.predict(df))
 
     if pred_size < len(sorted_items):
         final_items = [int(sorted_items[i][0]) for i in range(pred_size)]
