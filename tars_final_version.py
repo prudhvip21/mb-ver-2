@@ -37,6 +37,7 @@ products_df = pd.read_csv("products.csv")
 aisles_df = pd.read_csv("aisles.csv")
 departments_df = pd.read_csv("departments.csv")
 
+"""  FP growth algorithm default initialisation of tree structure """
 
 class FPNode(object):
     """
@@ -86,6 +87,8 @@ class FPNode(object):
 # frequent items with key value pairs required
 
 
+""" Header table for FP tree """
+
 def build_header_table(frequent):
     """
     Build the header table.
@@ -96,7 +99,7 @@ def build_header_table(frequent):
 
     return headers
 
-
+""" tree object """
 class FPTree(object):
     """
     A frequent pattern tree.
@@ -181,6 +184,7 @@ class FPTree(object):
             return True and self.tree_has_single_path(node.children[0])
 
 
+""" Making a list of products with frequency and periodicity  """
 def plist(orders):
     pf_list = {}
     for index, order in enumerate(orders):
@@ -204,6 +208,7 @@ def plist(orders):
 
     return pf_list
 
+""" removing/pruning list with best ones """
 
 def prune_plist(pf_list):
     frqs = [pf_list[key]['freq'] for key in pf_list.keys()]
@@ -219,6 +224,7 @@ def prune_plist(pf_list):
 
     return pf_list
 
+""" Pruning new tree """
 
 def prune_tree(temp_tree, node_value):
     tree = deepcopy(temp_tree)
@@ -259,7 +265,7 @@ def prune_tree(temp_tree, node_value):
 
                 temp = temp.parent
     return tree
-
+""" Extracting patterns from pruned tree"""
 
 def conditional_patterns(tree_pruned, pattern_node, prns):
     for pre, fill, node in RenderTree(tree_pruned.root):
@@ -279,7 +285,7 @@ def conditional_patterns(tree_pruned, pattern_node, prns):
             except Exception, e:
                 pass
     return prns
-
+""" Buiding new tree after one product patterns are removed """
 
 def next_pftree(original_tree, node):
     tem = deepcopy(original_tree)
@@ -293,6 +299,7 @@ def next_pftree(original_tree, node):
             n = n.link
     return tem
 
+""" Automating patterns generation from tree """
 
 def generate_patterns(transaction_list, trans):
     frq = prune_plist(trans)
@@ -309,6 +316,7 @@ def generate_patterns(transaction_list, trans):
 
     return patterns
 
+""" Product occurences table for inter and intra time"""
 
 def products_occurences(sorted_transactions_df,patrns) :
     its = list(patrns.keys())
@@ -324,7 +332,7 @@ def products_occurences(sorted_transactions_df,patrns) :
 
     return occurences
 
-
+""" Inter intra time, periods generation"""
 
 def iip_mod(sorted_transactions_df,pattern,occurences,d_max,pmin) :
     x = int(pattern.split(',')[0])
@@ -379,6 +387,7 @@ def iip_mod(sorted_transactions_df,pattern,occurences,d_max,pmin) :
 
     return intra2,inter2,periods
 
+""" Fding del max from the generated periods """
 
 def del_max(sorted_transactions_df,pat,occ):
     pats = [item[0] for item in pat.items()]
@@ -400,6 +409,7 @@ def del_max(sorted_transactions_df,pat,occ):
     df3 = df3.rename(columns={0: 'assigned_inter_max'})
     return df3
 
+""" Finding q min"""
 
 def q_min(sorted_transactions_df, df,occs):
     pats = df['pats'].tolist()
@@ -440,6 +450,8 @@ def q_min(sorted_transactions_df, df,occs):
     df5 = df5.rename(columns={0: 'assigned_p_min'})
     return df5
 
+""' FInding the predictior'
+
 
 def tbp_predictor(df, patterns_df):
     Q = 0
@@ -465,7 +477,7 @@ def tbp_predictor(df, patterns_df):
             pass
     return dict(predictors)
 
-
+""" Finalising prducts from list """
 
 def final_product_list(sorted_transactions_df, orders_df, items_dict):
     sorted_items = sorted(items_dict.items(), key=operator.itemgetter(1), reverse=True)
@@ -489,6 +501,7 @@ def final_product_list(sorted_transactions_df, orders_df, items_dict):
         final_items = [int(item[0]) for item in sorted_items]
     return final_items
 
+""" Running it for whole users"""
 
 def final_submission(total_df, orders_df, userids_list):
     i = 0
@@ -520,11 +533,15 @@ def final_submission(total_df, orders_df, userids_list):
         print i, "users predicted"
     return submiss
 
-
+# getting test user ids
 orders_df_test = orders_df[orders_df['eval_set'] == 'test']
 userids_list = list(set(orders_df_test['user_id']))
 
+# creating a data frame with products and order info at one place
+
 order_products_prior_df = order_products_prior_df[order_products_prior_df.product_id.isin(top_products_list)]
+
+# getting transactions data frame
 
 products_orders_df = order_products_prior_df.groupby(['order_id']).apply(
     lambda x: x['product_id'].tolist()).reset_index()

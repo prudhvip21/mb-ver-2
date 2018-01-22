@@ -4,6 +4,7 @@ import itertools
 import os
 import time
 import sys
+import operator
 # os.chdir('/root/mb/market_basket_data')
 os.chdir('/home/prudhvi/Documents/market_basket_data')
 
@@ -29,6 +30,8 @@ from sklearn import linear_model
 #from joblib import Parallel, delayed
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
+import lightgbm as lgb
+
 
 priors = pd.read_csv('order_products__prior.csv', dtype={
     'order_id': np.int32,
@@ -140,9 +143,9 @@ def productwise_order_ratio(final_df,dist_items) :
     products_ratio_df = products_ratio_df.cumsum(axis = 0)
     products_ratio_df = products_ratio_df.reset_index()
     products_ratio_df.iloc[:,1:] = products_ratio_df.iloc[:,1:].divide(products_ratio_df.index.values + 1 , axis = 0)
-    #products_ratio_df = products_ratio_df.melt(id_vars = ['order_id'])
-    #products_ratio_df.columns = ['order_id','product_id','productwise_order_ratio']
-    #products_ratio_df['order_id'] = products_ratio_df['order_id'].astype(np.int32)
+    products_ratio_df = products_ratio_df.melt(id_vars = ['order_id'])
+    products_ratio_df.columns = ['order_id','product_id','productwise_order_ratio']
+    products_ratio_df['order_id'] = products_ratio_df['order_id'].astype(np.int32)
 
     return  products_ratio_df
 
@@ -209,12 +212,12 @@ def days_since_last_productwise(final_df,dist_items) :
 
 
 def features(selected_orders,final_df,priors_single,dist_items_df,avg_days_orders_df,days_since_productwise_df,products_ratio_df,labels_given=False):
-    print('build candidate list')
+    #print('build candidate list')
     order_list = []
     product_list = []
     labels = []
     i = 0
-    print len(selected_orders)
+    #print len(selected_orders)
     for row in selected_orders.itertuples():
         # print i
         i += 1
@@ -226,16 +229,16 @@ def features(selected_orders,final_df,priors_single,dist_items_df,avg_days_order
         order_list += [order_id] * len(user_products)
         if labels_given:
             labels += [(order_id, product) in priors_single.index for product in user_products]
-    print Counter(labels)
+    #print Counter(labels)
     df = pd.DataFrame({'order_id': order_list, 'product_id': product_list}, dtype=np.int32)
     labels = np.array(labels, dtype=np.int8)
     del order_list
     del product_list
-    print('order related features')
+    #print('order related features')
 
     df['order_hour_of_day'] = df.order_id.map(orders.order_hour_of_day)
 
-    print('product related features')
+    #print('product related features')
 
     df['aisle_id'] = df.product_id.map(products.aisle_id)
     df['department_id'] = df.product_id.map(products.department_id)
@@ -247,31 +250,119 @@ def features(selected_orders,final_df,priors_single,dist_items_df,avg_days_order
     df = df.merge(dist_items_df, on ='order_id')
     df = df.merge(avg_days_orders_df[['order_id','avg_order_days','days_since_ratio','days_since_prior_order']], on = 'order_id')
 
-    print(df.dtypes)
-    print(df.memory_usage())
+    #print(df.dtypes)
+    #print(df.memory_usage())
     return (df, labels)
+
+
+
+
+
+params = {
+    'task': 'train',
+    'boosting_type': 'gbdt',
+    'objective': 'binary',
+    'metric': {'binary_logloss'},
+    'num_leaves': 20,
+    'max_depth': 5,
+    'feature_fraction': 0.8,
+    'bagging_fraction': 0.85,
+    'bagging_freq': 5,
+    'verbose' : 0
+}
+
+ROUNDS = 50
+TRESHOLD = 0.178
 
 """ final function """
 
 def final_function(userids_list) :
 
-    for id in userids_list :
-        #fin_df = total_df[(total_df['user_id'] == id) & (total_df['eval_set']== 'prior')]
-        fin_df = total_df[total_df['user_id'] == id]
-        fin_df['order_size'] = fin_df.apply(lambda x : len(x['Products']),axis = 1)
-        fin_df['Products'] = fin_df['Products'].fillna(value = [ ])
-        priors_single_k = priors[priors['user_id']==id]
-        priors_single_k.set_index(['order_id', 'product_id'], inplace=True, drop=False)
-        orders_single = orders[(orders['user_id']== id) & (orders['eval_set']== 'prior')]
-        dist_items_df_k,items = dist_items(fin_df)
-        avg_days_orders_df_k = avg_days(fin_df)
-        days_since_last_productwise_df_k = days_since_last_productwise(fin_df,items)
-        products_orders_df_k = productwise_order_ratio(fin_df,items)
-        df_train, labels = features(orders_single,fin_df,priors_single_k,dist_items_df_k,avg_days_orders_df_k,days_since_last_productwise_df_k,products_orders_df_k,labels_given=True)
+    p=0
+    result_df = pd.DataFrame(columns=['order_id', 'Actual', 'Predicted'])
+    try :
+        for id in userids_list :
+            #fin_df = total_df[(total_df['user_id'] == id) & (total_df['eval_set']== 'prior')]
+            fin_df = total_df[total_df['user_id'] == id]
+            fin_df['Products'] = fin_df['Products'].apply(lambda x: [] if x is np.nan else x)
+            fin_df['order_size'] = fin_df.apply(lambda x : len(x['Products']),axis = 1)
+            priors_single_k = priors[priors['user_id']==id]
+            priors_single_k.set_index(['order_id', 'product_id'], inplace=True, drop=False)
+            orders_single = orders[(orders['user_id']== id)]
+            dist_items_df_k,items = dist_items(fin_df)
+            avg_days_orders_df_k = avg_days(fin_df)
+            days_since_last_productwise_df_k = days_since_last_productwise(fin_df,items)
+            products_orders_df_k = productwise_order_ratio(fin_df,items)
+            df_train, labels = features(orders_single,fin_df,priors_single_k,dist_items_df_k,avg_days_orders_df_k,days_since_last_productwise_df_k,products_orders_df_k,labels_given=True)
+            test_order_id = int(orders_single[orders['eval_set']=='train']['order_id'])
+            df_train['product_id'] = df_train['product_id'].astype(int)
+            d_train, d_test = [x for _, x in df_train.groupby(df_train['order_id'] == test_order_id)]
+            labels = labels[0:len(d_train)]
+            f_to_use = list(d_train.columns)
+            d_train_lgb = lgb.Dataset(d_train[f_to_use],
+                                  label=labels,
+                                  categorical_feature=['order_id', 'product_id','order_hour_of_day', 'aisle_id','department_id'])
+            bst = lgb.train(params, d_train_lgb, ROUNDS)
+            preds = bst.predict(d_test[f_to_use])
+            d_test['preds'] = preds
+            transaction_list = fin_df['Products'].tolist()
+            trans = plist(fin_df['Products'])
+            patrns= generate_patterns(transaction_list,trans)
+            for key in patrns :
+                patrns[key] = patrns[key][0]
+            sorted_patrns = sorted(patrns.items(), key=operator.itemgetter(1), )
+
+            d = [ ]
+            for row in d_test.itertuples():
+                if row.preds > TRESHOLD:
+                    try:
+                        d.append(row.product_id)
+                    except :
+                        continue
+
+            prediction = ' '.join(str(i) for i in d)
+            train_single = train[train['order_id'] == test_order_id]
+            Actual = train_single.product_id.tolist()
+            result_df.loc[p] = [id,Actual,prediction]
+            p = p + 1
+            print p ,"users done"
+    except :
+        pass
+    return result_df
 
 
 
+orders_df_test = orders[orders['eval_set'] == 'train']
+userids_list = list(set(orders_df_test['user_id']))
+
+dff = final_function(userids_list[20:50])
+res_df = dff.apply(lambda row : cal_metrics(row),axis = 1)
+np.mean(res_df['F1'])
 
 
+
+kk = train[train['order_id']== test_order_id]
+
+
+
+def cal_metrics(s):
+    try:
+        act = s['Actual']
+        #print act
+        pred = s['Predicted'].split(' ')
+        pred = [int(item) for item in pred if item != '']
+        #print pred
+        TP = len(list(set(act).intersection(pred)))
+        PP = len(pred)
+        AP = len(act)
+        #print "precision " ,(TP/PP)
+        #print "Recall ", (TP / AP)
+        score = (2 * TP) / (AP + PP)
+        precision = TP/PP
+        recall = TP/AP
+        return pd.Series({'F1': score ,'Precision' : precision , 'recall' : recall})
+    except Exception,e :
+        #print e
+        pass
 
 
